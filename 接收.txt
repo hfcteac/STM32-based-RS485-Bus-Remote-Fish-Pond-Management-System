@@ -1,0 +1,501 @@
+/* USER CODE BEGIN Header */
+/**
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * <h2><center>&copy; Copyright (c) 2019 STMicroelectronics.
+ * All rights reserved.</center></h2>
+ *
+ * This software component is licensed by ST under BSD 3-Clause license,
+ * the "License"; You may not use this file except in compliance with the
+ * License. You may obtain a copy of the License at:
+ *                        opensource.org/licenses/BSD-3-Clause
+ *
+ ******************************************************************************
+ */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "dma.h"
+#include "i2c.h"
+#include "rtc.h"
+#include "tim.h"
+#include "usart.h"
+#include "gpio.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <oled.h>
+#include <string.h>
+#include <stdlib.h>
+#include <limits.h>
+/**
+ * 锟斤拷锟斤拷锟斤拷锟斤拷: 锟截讹拷锟斤拷c锟解函锟斤拷printf锟斤拷DEBUG_USARTx
+ * 锟斤拷锟斤拷锟斤拷锟?: 锟斤拷
+ * 锟斤拷 锟斤拷 值: 锟斤拷
+ * 说    锟斤拷锟斤拷锟斤拷
+ */
+int fputc(int ch, FILE *f)
+{
+	HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xffff);
+	return ch;
+}
+/**
+ * 锟斤拷锟斤拷锟斤拷锟斤拷: 锟截讹拷锟斤拷c锟解函锟斤拷getchar,scanf锟斤拷DEBUG_USARTx
+ * 锟斤拷锟斤拷锟斤拷锟?: 锟斤拷
+ * 锟斤拷 锟斤拷 值: 锟斤拷
+ * 说    锟斤拷锟斤拷锟斤拷
+ */
+int fgetc(FILE *f)
+{
+	uint8_t ch = 0;
+	HAL_UART_Receive(&huart2, &ch, 1, 0xffff);
+	return ch;
+}
+
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+int zzh=500;
+float phh=8.0,phl=6.5;
+int turn=0;
+unsigned int menu = 0, k = 0, l = 0, m = 1, n = 0, pwmnum = 200;
+// menu锟斤拷锟斤拷说锟窖★拷锟絢锟斤拷煤锟斤拷使锟杰ｏ拷l锟角伙拷使锟杰ｏ拷m锟斤拷锟斤拷湿锟斤拷锟睫改ｏ拷n锟角凤拷锟斤拷锟斤拷锟斤拷转锟斤拷pwmnum锟斤拷锟劫讹拷选锟斤拷
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+#define u8 unsigned char 
+#define u16 unsigned short
+#define u32 unsigned int
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+//区间映射
+u32 cal_map(u32 x, u32 in_min, u32 in_max, u32 out_min, u32 out_max)
+{
+	return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+
+/* USER CODE BEGIN PV */
+ uint32_t ADC_Value[100];
+ uint8_t i;
+ uint32_t ad1,ad2;
+
+unsigned long num;
+int num2;
+char *leftover,*leftover2;
+float zazi,ph,num3;
+
+#define Offset 0.00            //偏差补偿
+float phValue=0;
+
+// 用于保存转换计算后的电压值 	 
+float ADC_ConvertedValueLocal; 
+float compensationCoefficient=1.0;//温度校准系数
+float compensationVolatge;
+float TDS=0.0,TDS_voltage;
+float TDS_value=0.0,voltage_value;
+float kValue=1.67;
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+/* USER CODE BEGIN PFP */
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+#define BUFFERSIZE 255//可以接收的最大字符个数
+uint8_t ReceiveBuff[BUFFERSIZE]; //接收缓冲区
+uint8_t Rx_len;//接收完成中断标志，接收到字符长度
+extern DMA_HandleTypeDef hdma_usart2_rx;
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if(huart==&huart2)//判断是否是串口2中断
+	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_12);//引脚B12电平反转
+}
+
+unsigned long TDS_Value_Conversion(float zz,float ttemp)
+{
+	ADC_ConvertedValueLocal=zz;
+	compensationCoefficient=1.0+0.02*((ttemp/10)-25.0); 
+	compensationVolatge=ADC_ConvertedValueLocal/compensationCoefficient;
+	if((ADC_ConvertedValueLocal>=0)&&(ADC_ConvertedValueLocal<0.1))
+	{compensationVolatge=0;}
+	TDS_value=(133.42*compensationVolatge*compensationVolatge*compensationVolatge - 
+	255.86*compensationVolatge*compensationVolatge + 857.39*compensationVolatge)*0.5*kValue;
+	
+	  if((TDS_value<=0)){TDS_value=0;}
+		if((TDS_value>1400)){TDS_value=1400;}	
+
+return TDS_value;
+}
+
+void warinig(void)
+{
+	if(TDS_Value_Conversion(zazi*0.001f,num3)>zzh)
+	{
+		memset(ReceiveBuff,0,sizeof(ReceiveBuff));
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(300);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(300);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);
+	}
+	else if(phValue>phh)
+	{
+		memset(ReceiveBuff,0,sizeof(ReceiveBuff));
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);	
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);			
+	}
+	else if(phValue<phl)
+	{
+		memset(ReceiveBuff,0,sizeof(ReceiveBuff));
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);	
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_SET );
+		HAL_Delay(100);
+		HAL_GPIO_WritePin (GPIOA ,GPIO_PIN_15 ,GPIO_PIN_RESET );
+		HAL_Delay(100);				
+	}	
+	else
+	{
+		memset(ReceiveBuff,0,sizeof(ReceiveBuff));
+		HAL_Delay(500);	
+	}
+}
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+  /* USER CODE BEGIN 1 */
+	
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+	
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_RTC_Init();
+  MX_USART1_UART_Init();
+  MX_TIM1_Init();
+  MX_I2C1_Init();
+  MX_USART2_UART_Init();
+	HAL_Delay(1900);
+  /* USER CODE BEGIN 2 */
+	OLED_Init();
+	OLED_Clear();
+	OLED_ShowString(0,0,"HelloWorld",16);
+	//HAL_UART_Receive_IT(&huart2, (uint8_t *)&aRxBuffer, 1);
+	HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
+	
+	//串口区域改写
+	__HAL_UART_ENABLE_IT(&huart2, UART_IT_IDLE);//使能串口1 IDLE中断 
+	/*第二个参数目前为数组 如果为变量需要加取地址符*/
+	HAL_UART_Receive_DMA(&huart2,ReceiveBuff,BUFFERSIZE);//使能接收 
+
+
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+	while (1)
+	{
+      num = strtoul(ReceiveBuff, &leftover, 10);
+		  if(num>99999999)
+			num=99999999;
+		  zazi=(num/10000000)*1000+(num/1000000%10)*100+(num/100000%10)*10+(num/10000%10);
+			ph=(num/1000%10)*1000+(num/100%10)*100+(num/10%10)*10+(num%10);	
+			
+			num2=strtoul(leftover, &leftover2, 10);
+			num3=((num2*1.0)/100);
+			
+    if(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_5 )==0)
+		{
+			while(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_5 )==0);
+			menu++;
+			OLED_Clear();
+		}
+		if(menu>2)menu=0;
+    if(menu ==0)
+    {	
+		  OLED_ShowCHinese(0,0,0);
+			OLED_ShowCHinese(0,16,1);
+      OLED_ShowCHinese(0,32,2);	
+      OLED_ShowCHinese(0,48,3);		
+			OLED_ShowNum(64,0,num,8,16);
+	
+		  OLED_ShowCHinese(2,0,4);
+			OLED_ShowCHinese(2,16,5);		  	
+			OLED_ShowNum(32,2,TDS_Value_Conversion(zazi*0.001f,num3),4,16);
+      OLED_ShowString(66,2,"mg/L",16);	      			
+					
+			if(ph>3200)ph=3200;      
+			phValue=3.5*(ph/1000)+Offset;                      //将毫伏转换为pH值	
+      OLED_ShowString(0,4,"PH:",16);			
+			OLED_Showfloat(24,4,phValue,16);
+      OLED_ShowString(72,4,"mol*L-1",16);
+			
+		  OLED_ShowCHinese(6,0,19);
+			OLED_ShowCHinese(6,16,20);			
+			OLED_Showfloat(32,6,num3,16);
+      OLED_ShowString(80,6,"C",16);
+      warinig();			
+		  
+
+		}
+		else if(menu==1)
+		{
+			OLED_ShowCHinese(0,0,7);//菜
+			OLED_ShowCHinese(0,16,8);//单
+			OLED_ShowCHinese(0,32,9);//一
+			OLED_ShowCHinese(2,0,4);
+			OLED_ShowCHinese(2,16,5);
+			OLED_ShowCHinese(2,32,12);
+			OLED_ShowCHinese(2,48,13);
+			OLED_ShowCHinese(2,64,10);
+			OLED_ShowCHinese(2,80,11);
+
+      OLED_ShowNum(0,4,zzh,4,16);	
+			if(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_4 )==0)//4加3减
+			{
+				zzh++;
+			}
+			else if(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_3 )==0)
+			{
+				zzh--;
+			}
+			else if(zzh>1400)
+			{
+				zzh=1400;
+			}
+			else if(zzh<0)
+			{
+				zzh=0;
+			}
+		}
+    else if(menu==2)	
+		{
+			OLED_ShowCHinese(0,0,7);//菜
+			OLED_ShowCHinese(0,16,8);//单
+			OLED_ShowCHinese(0,32,18);//一
+      OLED_ShowString(0,2,"PH",16);
+			OLED_ShowCHinese(2,18,12);
+			OLED_ShowCHinese(2,34,13);
+			OLED_ShowCHinese(2,50,10);
+			OLED_ShowCHinese(2,66,11);
+
+			OLED_ShowCHinese(4,0,14);//菜
+			OLED_ShowCHinese(4,16,16);//单			
+			OLED_ShowCHinese(6,0,15);//菜
+			OLED_ShowCHinese(6,16,16);//单			
+      OLED_Showfloat(33,4,phh,16);
+      OLED_Showfloat(33,6,phl,16);
+
+			if((HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_4 )==0)&&(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_3 )==0))
+			{
+				while((HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_4 )==0)&&(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_3 )==0));
+				turn++;
+			}
+			else if(turn>1)
+			{
+				turn=0;
+			}
+			if(turn==0)
+			{
+				if(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_4 )==0)//4加3减
+				{
+					phh+=0.1;
+				}
+				else if(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_3 )==0)
+				{
+					phh-=0.1;
+				}
+			OLED_ShowCHinese(4,80,17);//单			
+			OLED_ShowCHinese(6,80,6);//菜			
+			}
+			if(turn==1)
+			{
+				if(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_4 )==0)//4加3减
+				{
+					phl+=0.1;
+				}
+				else if(HAL_GPIO_ReadPin(GPIOB ,GPIO_PIN_3 )==0)
+				{
+					phl-=0.1;
+				}
+			OLED_ShowCHinese(4,80,6);//单			
+			OLED_ShowCHinese(6,80,17);//菜			
+			}			
+			if(zzh>1400)
+			{
+				zzh=1400;
+			}
+			else if(zzh<0)
+			{
+				zzh=0;
+			}
+		}			
+					
+			
+//		  OLED_ShowCHinese(6,0,43);//清除最后一行方便刷新用的
+//			OLED_ShowCHinese(6,16,43);//清除最后一行方便刷新用的
+//      OLED_ShowCHinese(6,32,43);//清除最后一行方便刷新用的		
+//      OLED_ShowCHinese(6,48,43);//清除最后一行方便刷新用的	
+//      OLED_ShowCHinese(6,64,43);//清除最后一行方便刷新用的	
+//      OLED_ShowCHinese(6,80,43);//清除最后一行方便刷新用的	
+//      OLED_ShowCHinese(6,96,43);//清除最后一行方便刷新用的
+//      OLED_ShowCHinese(6,112,43);//清除最后一行方便刷新用的	
+//			OLED_ShowString(0,6,ReceiveBuff,16);
+      
+		//printf("%d\r\n",(turnADC2*1000000)+(turnADC1*10000)+(temp*100)+humi);//后续串调节都在这写
+		//编码：空气*1000000+分贝*10000+温度*100+湿度。
+		//解码：数值/1000000=空气，数值/10000%100=分贝，
+		//      数值/100%100==温度，数值%100=湿度。转换380,120,45,22=1204522
+
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+	}
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/* USER CODE BEGIN 4 */
+
+
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+	/* User can add his own implementation to report the HAL error return state */
+
+  /* USER CODE END Error_Handler_Debug */
+}
+
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+	/* User can add his own implementation to report the file name and line number,
+	   tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
